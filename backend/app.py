@@ -1,6 +1,7 @@
 from flask import Flask, request, Response, stream_with_context
 from flask_cors import CORS
 from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 import json
@@ -9,13 +10,39 @@ import os
 app = Flask(__name__)
 CORS(app)
 
+# Configuration
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+
+def get_llm():
+    """Initialize and return the appropriate LLM based on configuration."""
+    if LLM_PROVIDER == "claude" or LLM_PROVIDER == "anthropic":
+        model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable is required for Claude")
+        return ChatAnthropic(
+            model=model,
+            temperature=TEMPERATURE,
+            streaming=True,
+            anthropic_api_key=api_key
+        )
+    elif LLM_PROVIDER == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI")
+        return ChatOpenAI(
+            model=model,
+            temperature=TEMPERATURE,
+            streaming=True,
+            openai_api_key=api_key
+        )
+    else:
+        raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}. Choose 'openai' or 'claude'")
+
 # Initialize LangChain LLM with streaming
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
-    temperature=0.7,
-    streaming=True,
-    openai_api_key=os.getenv("OPENAI_API_KEY")
-)
+llm = get_llm()
 
 parser = StrOutputParser()
 

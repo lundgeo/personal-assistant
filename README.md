@@ -1,6 +1,6 @@
 # Personal Assistant Chatbot
 
-A full-stack chatbot application with a Flask backend using LangChain and a Next.js frontend.
+A full-stack chatbot application with a Flask backend using LangChain (supporting both OpenAI and Claude) and a Next.js frontend.
 
 ## Project Structure
 
@@ -24,10 +24,10 @@ A full-stack chatbot application with a Flask backend using LangChain and a Next
 cd backend
 ```
 
-2. Create a `.env` file with your OpenAI API key:
+2. Create a `.env` file with your API configuration:
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY
+# Edit .env and configure your preferred LLM provider (OpenAI or Claude)
 ```
 
 3. Install dependencies with uv:
@@ -65,7 +65,8 @@ The frontend will run on http://localhost:3000
 
 - **Backend**:
   - Flask REST API with CORS support
-  - LangChain integration with OpenAI
+  - LangChain integration with both OpenAI and Claude (Anthropic)
+  - Configurable LLM provider via environment variables
   - Server-Sent Events (SSE) for streaming responses
   - uv for fast, reliable Python package management
 
@@ -78,6 +79,26 @@ The frontend will run on http://localhost:3000
 
 ## Tech Stack
 
-- **Backend**: Flask, LangChain, OpenAI, Python 3.11+
+- **Backend**: Flask, LangChain, OpenAI, Anthropic (Claude), Python 3.11+
 - **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
 - **Package Management**: uv (backend), npm (frontend)
+
+## LLM Provider Configuration
+
+The backend supports both OpenAI and Claude (Anthropic). Set your preferred provider in the `.env` file:
+
+**For OpenAI:**
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your-key
+OPENAI_MODEL=gpt-3.5-turbo
+```
+
+**For Claude:**
+```env
+LLM_PROVIDER=claude
+ANTHROPIC_API_KEY=your-key
+ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+```
+
+See `backend/README.md` for detailed configuration options.
