@@ -5,8 +5,11 @@ from langchain_anthropic import ChatAnthropic
 from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
+from dotenv import load_dotenv
 import json
 import os
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -97,4 +100,4 @@ def chat():
     )
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=3001)

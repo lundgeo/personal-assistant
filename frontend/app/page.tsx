@@ -36,7 +36,7 @@ export default function Home() {
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:5000/chat', {
+      const response = await fetch('http://localhost:3001/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -132,11 +132,10 @@ export default function Home() {
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                    message.role === 'user'
+                  className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === 'user'
                       ? 'bg-blue-500 text-white'
                       : 'bg-white text-gray-800 border border-gray-200'
-                  }`}
+                    }`}
                 >
                   <p className="whitespace-pre-wrap">{message.content}</p>
                 </div>

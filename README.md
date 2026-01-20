@@ -40,7 +40,7 @@ uv sync
 uv run python app.py
 ```
 
-The backend will run on http://localhost:5000
+The backend will run on http://localhost:3001
 
 ### Frontend
 
