@@ -1,6 +1,6 @@
 # Personal Assistant Chatbot
 
-A full-stack chatbot application with a Flask backend using LangChain (supporting both OpenAI and Claude) and a Next.js frontend.
+A full-stack chatbot application with a Flask backend using LangChain (supporting OpenAI, Claude, and local models via Ollama) and a Next.js frontend.
 
 ## Project Structure
 
@@ -27,7 +27,7 @@ cd backend
 2. Create a `.env` file with your API configuration:
 ```bash
 cp .env.example .env
-# Edit .env and configure your preferred LLM provider (OpenAI or Claude)
+# Edit .env and configure your preferred LLM provider (OpenAI, Claude, or Ollama)
 ```
 
 3. Install dependencies with uv:
@@ -65,7 +65,7 @@ The frontend will run on http://localhost:3000
 
 - **Backend**:
   - Flask REST API with CORS support
-  - LangChain integration with both OpenAI and Claude (Anthropic)
+  - LangChain integration with OpenAI, Claude (Anthropic), and Ollama (local models)
   - Configurable LLM provider via environment variables
   - Server-Sent Events (SSE) for streaming responses
   - uv for fast, reliable Python package management
@@ -79,13 +79,13 @@ The frontend will run on http://localhost:3000
 
 ## Tech Stack
 
-- **Backend**: Flask, LangChain, OpenAI, Anthropic (Claude), Python 3.11+
+- **Backend**: Flask, LangChain, OpenAI, Anthropic (Claude), Ollama, Python 3.11+
 - **Frontend**: Next.js 15, React 19, TypeScript, Tailwind CSS
 - **Package Management**: uv (backend), npm (frontend)
 
 ## LLM Provider Configuration
 
-The backend supports both OpenAI and Claude (Anthropic). Set your preferred provider in the `.env` file:
+The backend supports OpenAI, Claude (Anthropic), and Ollama (local models). Set your preferred provider in the `.env` file:
 
 **For OpenAI:**
 ```env
@@ -101,4 +101,13 @@ ANTHROPIC_API_KEY=your-key
 ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
 ```
 
-See `backend/README.md` for detailed configuration options.
+**For Ollama (Local Models):**
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Note: Ollama requires installation from [https://ollama.ai](https://ollama.ai) and pulling a model first (e.g., `ollama pull llama3.2`).
+
+See `backend/README.md` for detailed configuration options and available models.

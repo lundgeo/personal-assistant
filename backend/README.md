@@ -1,6 +1,6 @@
 # Chatbot Backend
 
-Flask-based chatbot backend using LangChain with streaming support for both OpenAI and Claude (Anthropic).
+Flask-based chatbot backend using LangChain with streaming support for OpenAI, Claude (Anthropic), and local models via Ollama.
 
 ## Setup
 
@@ -22,7 +22,7 @@ uv sync
 
 ## Configuration
 
-The backend supports both OpenAI and Claude (Anthropic) as LLM providers. Configure via environment variables in your `.env` file:
+The backend supports OpenAI, Claude (Anthropic), and Ollama (local models) as LLM providers. Configure via environment variables in your `.env` file:
 
 ### Using OpenAI (default)
 ```env
@@ -40,6 +40,28 @@ ANTHROPIC_MODEL=claude-3-5-sonnet-20241022  # or other Claude models
 TEMPERATURE=0.7
 ```
 
+### Using Ollama (Local Models)
+
+First, install Ollama from [https://ollama.ai](https://ollama.ai), then pull a model:
+```bash
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull a model (e.g., llama3.2)
+ollama pull llama3.2
+
+# Verify Ollama is running
+ollama list
+```
+
+Then configure your `.env`:
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=llama3.2  # or any other model you've pulled
+OLLAMA_BASE_URL=http://localhost:11434  # default Ollama URL
+TEMPERATURE=0.7
+```
+
 ### Available Models
 
 **OpenAI:**
@@ -52,6 +74,16 @@ TEMPERATURE=0.7
 - `claude-3-5-sonnet-20241022` (default, most capable)
 - `claude-3-5-haiku-20241022` (fast and efficient)
 - `claude-3-opus-20240229`
+
+**Ollama (Local Models):**
+- `llama3.2` (default, latest Llama 3.2)
+- `llama3.1` (Llama 3.1)
+- `llama3` (Llama 3)
+- `mistral` (Mistral 7B)
+- `codellama` (Code-focused Llama)
+- `phi3` (Microsoft Phi-3)
+- `gemma2` (Google Gemma 2)
+- And many more available at [https://ollama.ai/library](https://ollama.ai/library)
 
 ## Running
 

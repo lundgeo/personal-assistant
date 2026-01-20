@@ -2,6 +2,7 @@ from flask import Flask, request, Response, stream_with_context
 from flask_cors import CORS
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
+from langchain_ollama import ChatOllama
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import StrOutputParser
 import json
@@ -38,8 +39,16 @@ def get_llm():
             streaming=True,
             openai_api_key=api_key
         )
+    elif LLM_PROVIDER == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "llama3.2")
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        return ChatOllama(
+            model=model,
+            temperature=TEMPERATURE,
+            base_url=base_url,
+        )
     else:
-        raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}. Choose 'openai' or 'claude'")
+        raise ValueError(f"Unsupported LLM provider: {LLM_PROVIDER}. Choose 'openai', 'claude', or 'ollama'")
 
 # Initialize LangChain LLM with streaming
 llm = get_llm()
