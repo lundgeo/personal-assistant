@@ -108,21 +108,39 @@ def add_mcp_server():
     """Add a new MCP server."""
     data = request.json
     name = data.get('name')
-    command = data.get('command')
-    args = data.get('args', [])
-    env = data.get('env', {})
+    transport = data.get('transport', 'stdio')
 
-    if not name or not command:
-        return {'error': 'Name and command are required'}, 400
+    if not name:
+        return {'error': 'Name is required'}, 400
 
-    mcp_manager.add_server(name, command, args, env)
-
-    # Sync tools from new server
     try:
+        if transport == 'stdio':
+            command = data.get('command')
+            args = data.get('args', [])
+            env = data.get('env', {})
+
+            if not command:
+                return {'error': 'Command is required for stdio transport'}, 400
+
+            mcp_manager.add_server(name, transport, command=command, args=args, env=env)
+
+        elif transport == 'sse':
+            url = data.get('url')
+            headers = data.get('headers', {})
+
+            if not url:
+                return {'error': 'URL is required for sse transport'}, 400
+
+            mcp_manager.add_server(name, transport, url=url, headers=headers)
+
+        else:
+            return {'error': f'Unsupported transport type: {transport}'}, 400
+
+        # Sync tools from new server
         mcp_manager.sync_tools_to_database(app)
         return {'message': 'MCP server added successfully'}, 201
     except Exception as e:
-        return {'error': f'Failed to sync tools: {str(e)}'}, 500
+        return {'error': f'Failed to add server: {str(e)}'}, 500
 
 @app.route('/mcp-servers/<server_name>', methods=['DELETE'])
 def delete_mcp_server(server_name):

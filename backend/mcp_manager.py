@@ -4,6 +4,7 @@ import asyncio
 from typing import Dict, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.sse import sse_client
 from database import db, Tool
 
 class MCPManager:
@@ -28,13 +29,40 @@ class MCPManager:
         with open(self.config_path, 'w') as f:
             json.dump({'mcpServers': self.servers}, f, indent=2)
 
-    def add_server(self, name: str, command: str, args: List[str] = None, env: Dict[str, str] = None):
-        """Add a new MCP server to configuration."""
-        self.servers[name] = {
-            'command': command,
-            'args': args or [],
-            'env': env or {}
-        }
+    def add_server(self, name: str, transport: str, command: str = None, args: List[str] = None,
+                   env: Dict[str, str] = None, url: str = None, headers: Dict[str, str] = None):
+        """Add a new MCP server to configuration.
+
+        Args:
+            name: Server name
+            transport: 'stdio' for local process or 'sse' for remote HTTP server
+            command: Command to run (for stdio transport)
+            args: Command arguments (for stdio transport)
+            env: Environment variables (for stdio transport)
+            url: Server URL (for sse transport)
+            headers: HTTP headers (for sse transport)
+        """
+        server_config = {'transport': transport}
+
+        if transport == 'stdio':
+            if not command:
+                raise ValueError("command is required for stdio transport")
+            server_config.update({
+                'command': command,
+                'args': args or [],
+                'env': env or {}
+            })
+        elif transport == 'sse':
+            if not url:
+                raise ValueError("url is required for sse transport")
+            server_config.update({
+                'url': url,
+                'headers': headers or {}
+            })
+        else:
+            raise ValueError(f"Unsupported transport: {transport}. Use 'stdio' or 'sse'")
+
+        self.servers[name] = server_config
         self.save_config()
 
     def remove_server(self, name: str):
@@ -48,32 +76,67 @@ class MCPManager:
     async def discover_tools_from_server(self, server_name: str, server_config: dict) -> List[dict]:
         """Connect to an MCP server and discover its tools."""
         try:
-            server_params = StdioServerParameters(
-                command=server_config['command'],
-                args=server_config.get('args', []),
-                env=server_config.get('env', {})
-            )
+            transport = server_config.get('transport', 'stdio')
 
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-
-                    # List available tools
-                    tools_result = await session.list_tools()
-
-                    discovered_tools = []
-                    for tool in tools_result.tools:
-                        discovered_tools.append({
-                            'name': tool.name,
-                            'description': tool.description or 'No description provided',
-                            'server_name': server_name,
-                            'schema': json.dumps(tool.inputSchema) if hasattr(tool, 'inputSchema') else None
-                        })
-
-                    return discovered_tools
+            if transport == 'stdio':
+                return await self._discover_tools_stdio(server_name, server_config)
+            elif transport == 'sse':
+                return await self._discover_tools_sse(server_name, server_config)
+            else:
+                print(f"Unknown transport type: {transport}")
+                return []
         except Exception as e:
             print(f"Error discovering tools from {server_name}: {str(e)}")
             return []
+
+    async def _discover_tools_stdio(self, server_name: str, server_config: dict) -> List[dict]:
+        """Discover tools from a stdio-based MCP server."""
+        server_params = StdioServerParameters(
+            command=server_config['command'],
+            args=server_config.get('args', []),
+            env=server_config.get('env', {})
+        )
+
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # List available tools
+                tools_result = await session.list_tools()
+
+                discovered_tools = []
+                for tool in tools_result.tools:
+                    discovered_tools.append({
+                        'name': tool.name,
+                        'description': tool.description or 'No description provided',
+                        'server_name': server_name,
+                        'schema': json.dumps(tool.inputSchema) if hasattr(tool, 'inputSchema') else None
+                    })
+
+                return discovered_tools
+
+    async def _discover_tools_sse(self, server_name: str, server_config: dict) -> List[dict]:
+        """Discover tools from an SSE-based remote MCP server."""
+        url = server_config['url']
+        headers = server_config.get('headers', {})
+
+        async with sse_client(url, headers) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # List available tools
+                tools_result = await session.list_tools()
+
+                discovered_tools = []
+                for tool in tools_result.tools:
+                    discovered_tools.append({
+                        'name': tool.name,
+                        'description': tool.description or 'No description provided',
+                        'server_name': server_name,
+                        'schema': json.dumps(tool.inputSchema) if hasattr(tool, 'inputSchema') else None
+                    })
+
+                return discovered_tools
 
     async def discover_all_tools(self) -> List[dict]:
         """Discover tools from all configured MCP servers."""
@@ -129,31 +192,62 @@ class MCPManager:
             return f"Error: MCP server '{server_name}' not found"
 
         server_config = self.servers[server_name]
+        transport = server_config.get('transport', 'stdio')
 
         try:
-            server_params = StdioServerParameters(
-                command=server_config['command'],
-                args=server_config.get('args', []),
-                env=server_config.get('env', {})
-            )
-
-            async with stdio_client(server_params) as (read, write):
-                async with ClientSession(read, write) as session:
-                    await session.initialize()
-
-                    # Call the tool
-                    result = await session.call_tool(tool_name, arguments)
-
-                    # Extract text content from result
-                    if hasattr(result, 'content') and result.content:
-                        return '\n'.join([
-                            item.text if hasattr(item, 'text') else str(item)
-                            for item in result.content
-                        ])
-
-                    return str(result)
+            if transport == 'stdio':
+                return await self._call_tool_stdio(server_config, tool_name, arguments)
+            elif transport == 'sse':
+                return await self._call_tool_sse(server_config, tool_name, arguments)
+            else:
+                return f"Error: Unknown transport type '{transport}'"
         except Exception as e:
             return f"Error calling tool {tool_name}: {str(e)}"
+
+    async def _call_tool_stdio(self, server_config: dict, tool_name: str, arguments: dict) -> str:
+        """Call a tool on a stdio-based MCP server."""
+        server_params = StdioServerParameters(
+            command=server_config['command'],
+            args=server_config.get('args', []),
+            env=server_config.get('env', {})
+        )
+
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # Call the tool
+                result = await session.call_tool(tool_name, arguments)
+
+                # Extract text content from result
+                if hasattr(result, 'content') and result.content:
+                    return '\n'.join([
+                        item.text if hasattr(item, 'text') else str(item)
+                        for item in result.content
+                    ])
+
+                return str(result)
+
+    async def _call_tool_sse(self, server_config: dict, tool_name: str, arguments: dict) -> str:
+        """Call a tool on an SSE-based remote MCP server."""
+        url = server_config['url']
+        headers = server_config.get('headers', {})
+
+        async with sse_client(url, headers) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                # Call the tool
+                result = await session.call_tool(tool_name, arguments)
+
+                # Extract text content from result
+                if hasattr(result, 'content') and result.content:
+                    return '\n'.join([
+                        item.text if hasattr(item, 'text') else str(item)
+                        for item in result.content
+                    ])
+
+                return str(result)
 
 # Global MCP manager instance
 mcp_manager = MCPManager()
