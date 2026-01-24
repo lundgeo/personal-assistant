@@ -13,6 +13,9 @@ class Tool(db.Model):
     default_context = db.Column(db.Text, nullable=False)
     custom_context = db.Column(db.Text, nullable=True)
     enabled = db.Column(db.Boolean, default=True)
+    source = db.Column(db.String(50), default='built-in')  # 'built-in' or 'mcp'
+    mcp_server_name = db.Column(db.String(100), nullable=True)  # Name of MCP server if source is 'mcp'
+    tool_schema = db.Column(db.Text, nullable=True)  # JSON schema for MCP tools
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -25,6 +28,9 @@ class Tool(db.Model):
             'default_context': self.default_context,
             'custom_context': self.custom_context,
             'enabled': self.enabled,
+            'source': self.source,
+            'mcp_server_name': self.mcp_server_name,
+            'tool_schema': self.tool_schema,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

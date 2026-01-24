@@ -1,7 +1,10 @@
-from langchain_core.tools import tool
+from langchain_core.tools import tool, StructuredTool
 from typing import Optional
 import math
 import re
+import asyncio
+import json
+from mcp_manager import mcp_manager
 
 @tool
 def web_search(query: str) -> str:
@@ -78,6 +81,46 @@ TOOL_MAP = {
     'file_analyzer': file_analyzer
 }
 
+def create_mcp_tool_wrapper(tool_config):
+    """Create a LangChain tool wrapper for an MCP tool.
+
+    Args:
+        tool_config: Tool configuration dictionary
+
+    Returns:
+        A LangChain StructuredTool
+    """
+    server_name = tool_config['mcp_server_name']
+    # Extract the actual tool name (remove server prefix)
+    tool_name = tool_config['name'].replace(f"{server_name}_", "")
+
+    def sync_mcp_call(**kwargs) -> str:
+        """Synchronous wrapper for async MCP tool call."""
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            mcp_manager.call_mcp_tool(server_name, tool_name, kwargs)
+        )
+        loop.close()
+        return result
+
+    # Parse schema if available
+    args_schema = None
+    if tool_config.get('tool_schema'):
+        try:
+            schema_dict = json.loads(tool_config['tool_schema'])
+            # The schema can be used to validate arguments
+            # For now, we'll use a simple dict-based approach
+            args_schema = schema_dict
+        except:
+            pass
+
+    return StructuredTool.from_function(
+        func=sync_mcp_call,
+        name=tool_config['name'],
+        description=tool_config['description'],
+    )
+
 def get_enabled_tools(tool_configs):
     """Get enabled tools with their custom context applied.
 
@@ -89,10 +132,18 @@ def get_enabled_tools(tool_configs):
     """
     enabled_tools = []
     for config in tool_configs:
-        if config['enabled'] and config['name'] in TOOL_MAP:
+        if not config['enabled']:
+            continue
+
+        # Handle built-in tools
+        if config.get('source') == 'built-in' and config['name'] in TOOL_MAP:
             tool_func = TOOL_MAP[config['name']]
-            # The custom context will be included in the system message
             enabled_tools.append(tool_func)
+
+        # Handle MCP tools
+        elif config.get('source') == 'mcp':
+            mcp_tool = create_mcp_tool_wrapper(config)
+            enabled_tools.append(mcp_tool)
 
     return enabled_tools
 

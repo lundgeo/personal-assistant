@@ -20,7 +20,8 @@ dependencies = [
     "anthropic>=0.18.0",
     "python-dotenv>=1.0.0",
     "flask-sqlalchemy>=3.0.0",
+    "mcp>=1.0.0",
 ]
 
 [tool.setuptools]
-py-modules = ["app", "database", "tools"]
+py-modules = ["app", "database", "tools", "mcp_manager"]

@@ -14,6 +14,16 @@ interface Tool {
   default_context: string;
   custom_context: string | null;
   enabled: boolean;
+  source: string;
+  mcp_server_name: string | null;
+  tool_schema: string | null;
+}
+
+interface MCPServer {
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
 }
 
 export default function Home() {
@@ -24,6 +34,11 @@ export default function Home() {
   const [showToolsPanel, setShowToolsPanel] = useState(false);
   const [editingTool, setEditingTool] = useState<Tool | null>(null);
   const [editContext, setEditContext] = useState('');
+  const [mcpServers, setMcpServers] = useState<Record<string, MCPServer>>({});
+  const [showMcpModal, setShowMcpModal] = useState(false);
+  const [newServerName, setNewServerName] = useState('');
+  const [newServerCommand, setNewServerCommand] = useState('');
+  const [newServerArgs, setNewServerArgs] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -39,6 +54,81 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error fetching tools:', error);
+    }
+  };
+
+  const fetchMcpServers = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/mcp-servers');
+      if (response.ok) {
+        const data = await response.json();
+        setMcpServers(data);
+      }
+    } catch (error) {
+      console.error('Error fetching MCP servers:', error);
+    }
+  };
+
+  const handleAddMcpServer = async () => {
+    if (!newServerName || !newServerCommand) return;
+
+    try {
+      const args = newServerArgs ? newServerArgs.split(' ').filter(arg => arg.trim()) : [];
+
+      const response = await fetch('http://localhost:3001/mcp-servers', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: newServerName,
+          command: newServerCommand,
+          args: args,
+          env: {}
+        }),
+      });
+
+      if (response.ok) {
+        await fetchMcpServers();
+        await fetchTools();
+        setShowMcpModal(false);
+        setNewServerName('');
+        setNewServerCommand('');
+        setNewServerArgs('');
+      }
+    } catch (error) {
+      console.error('Error adding MCP server:', error);
+    }
+  };
+
+  const handleDeleteMcpServer = async (serverName: string) => {
+    if (!confirm(`Are you sure you want to delete the "${serverName}" MCP server?`)) return;
+
+    try {
+      const response = await fetch(`http://localhost:3001/mcp-servers/${serverName}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await fetchMcpServers();
+        await fetchTools();
+      }
+    } catch (error) {
+      console.error('Error deleting MCP server:', error);
+    }
+  };
+
+  const handleSyncMcpTools = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/mcp-servers/sync', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        await fetchTools();
+      }
+    } catch (error) {
+      console.error('Error syncing MCP tools:', error);
     }
   };
 
@@ -93,6 +183,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchTools();
+    fetchMcpServers();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -189,36 +280,123 @@ export default function Home() {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Tools Panel */}
-      <div className={`${showToolsPanel ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden border-r border-gray-200 bg-white`}>
-        <div className="p-4">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Tools</h2>
-          <div className="space-y-3">
-            {tools.map(tool => (
-              <div key={tool.id} className="border border-gray-200 rounded-lg p-3">
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-gray-800">{tool.name.replace(/_/g, ' ')}</h3>
-                    <p className="text-xs text-gray-500 mt-1">{tool.description}</p>
+      <div className={`${showToolsPanel ? 'w-80' : 'w-0'} transition-all duration-300 overflow-hidden border-r border-gray-200 bg-white flex flex-col`}>
+        <div className="p-4 flex-1 overflow-y-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-800">Tools</h2>
+            <button
+              onClick={handleSyncMcpTools}
+              className="text-xs px-2 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+              title="Sync MCP tools"
+            >
+              Sync
+            </button>
+          </div>
+
+          {/* Built-in Tools */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-600 mb-2">Built-in Tools</h3>
+            <div className="space-y-3">
+              {tools.filter(t => t.source === 'built-in').map(tool => (
+                <div key={tool.id} className="border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-800">{tool.name.replace(/_/g, ' ')}</h3>
+                      <p className="text-xs text-gray-500 mt-1">{tool.description}</p>
+                    </div>
+                    <button
+                      onClick={() => handleToolToggle(tool)}
+                      className={`ml-2 px-2 py-1 rounded text-xs ${
+                        tool.enabled
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      {tool.enabled ? 'ON' : 'OFF'}
+                    </button>
                   </div>
                   <button
-                    onClick={() => handleToolToggle(tool)}
-                    className={`ml-2 px-2 py-1 rounded text-xs ${
-                      tool.enabled
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}
+                    onClick={() => handleToolEdit(tool)}
+                    className="text-xs text-blue-600 hover:text-blue-800"
                   >
-                    {tool.enabled ? 'ON' : 'OFF'}
+                    Edit Context
                   </button>
                 </div>
-                <button
-                  onClick={() => handleToolEdit(tool)}
-                  className="text-xs text-blue-600 hover:text-blue-800"
-                >
-                  Edit Context
-                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* MCP Tools */}
+          <div className="mb-6">
+            <h3 className="text-sm font-semibold text-gray-600 mb-2">MCP Tools</h3>
+            {tools.filter(t => t.source === 'mcp').length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No MCP tools available. Add an MCP server below.</p>
+            ) : (
+              <div className="space-y-3">
+                {tools.filter(t => t.source === 'mcp').map(tool => (
+                  <div key={tool.id} className="border border-purple-200 rounded-lg p-3 bg-purple-50">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-800">{tool.name.replace(/_/g, ' ')}</h3>
+                        <p className="text-xs text-gray-500 mt-1">{tool.description}</p>
+                        <p className="text-xs text-purple-600 mt-1">Server: {tool.mcp_server_name}</p>
+                      </div>
+                      <button
+                        onClick={() => handleToolToggle(tool)}
+                        className={`ml-2 px-2 py-1 rounded text-xs ${
+                          tool.enabled
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {tool.enabled ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => handleToolEdit(tool)}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      Edit Context
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+          </div>
+
+          {/* MCP Servers */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-gray-600">MCP Servers</h3>
+              <button
+                onClick={() => setShowMcpModal(true)}
+                className="text-xs px-2 py-1 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
+              >
+                Add Server
+              </button>
+            </div>
+            {Object.keys(mcpServers).length === 0 ? (
+              <p className="text-xs text-gray-400 italic">No MCP servers configured</p>
+            ) : (
+              <div className="space-y-2">
+                {Object.entries(mcpServers).map(([name, server]) => (
+                  <div key={name} className="border border-gray-200 rounded p-2 bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-gray-800">{name}</p>
+                        <p className="text-xs text-gray-500">{server.command}</p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteMcpServer(name)}
+                        className="text-xs px-2 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -265,6 +443,72 @@ export default function Home() {
                 className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
               >
                 Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add MCP Server Modal */}
+      {showMcpModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">
+              Add MCP Server
+            </h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Server Name:
+              </label>
+              <input
+                type="text"
+                value={newServerName}
+                onChange={(e) => setNewServerName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                placeholder="e.g., filesystem, weather, etc."
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Command:
+              </label>
+              <input
+                type="text"
+                value={newServerCommand}
+                onChange={(e) => setNewServerCommand(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                placeholder="e.g., npx, python, node, etc."
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Arguments (space-separated):
+              </label>
+              <input
+                type="text"
+                value={newServerArgs}
+                onChange={(e) => setNewServerArgs(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                placeholder="e.g., -y @modelcontextprotocol/server-filesystem /path/to/dir"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => {
+                  setShowMcpModal(false);
+                  setNewServerName('');
+                  setNewServerCommand('');
+                  setNewServerArgs('');
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddMcpServer}
+                className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+              >
+                Add Server
               </button>
             </div>
           </div>

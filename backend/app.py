@@ -10,6 +10,7 @@ import json
 import os
 from database import db, Tool, init_db
 from tools import get_enabled_tools, build_tool_context
+from mcp_manager import mcp_manager
 
 load_dotenv()
 
@@ -22,6 +23,12 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize database
 init_db(app)
+
+# Sync MCP tools after database initialization
+try:
+    mcp_manager.sync_tools_to_database(app)
+except Exception as e:
+    print(f"Warning: Failed to sync MCP tools: {str(e)}")
 
 # Configuration
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
@@ -90,6 +97,51 @@ def update_tool(tool_id):
 
     db.session.commit()
     return jsonify(tool.to_dict()), 200
+
+@app.route('/mcp-servers', methods=['GET'])
+def get_mcp_servers():
+    """Get all configured MCP servers."""
+    return jsonify(mcp_manager.servers), 200
+
+@app.route('/mcp-servers', methods=['POST'])
+def add_mcp_server():
+    """Add a new MCP server."""
+    data = request.json
+    name = data.get('name')
+    command = data.get('command')
+    args = data.get('args', [])
+    env = data.get('env', {})
+
+    if not name or not command:
+        return {'error': 'Name and command are required'}, 400
+
+    mcp_manager.add_server(name, command, args, env)
+
+    # Sync tools from new server
+    try:
+        mcp_manager.sync_tools_to_database(app)
+        return {'message': 'MCP server added successfully'}, 201
+    except Exception as e:
+        return {'error': f'Failed to sync tools: {str(e)}'}, 500
+
+@app.route('/mcp-servers/<server_name>', methods=['DELETE'])
+def delete_mcp_server(server_name):
+    """Delete an MCP server."""
+    if mcp_manager.remove_server(server_name):
+        # Remove associated tools from database
+        Tool.query.filter_by(source='mcp', mcp_server_name=server_name).delete()
+        db.session.commit()
+        return {'message': 'MCP server deleted successfully'}, 200
+    return {'error': 'MCP server not found'}, 404
+
+@app.route('/mcp-servers/sync', methods=['POST'])
+def sync_mcp_servers():
+    """Manually trigger MCP tool sync."""
+    try:
+        mcp_manager.sync_tools_to_database(app)
+        return {'message': 'MCP tools synced successfully'}, 200
+    except Exception as e:
+        return {'error': f'Failed to sync tools: {str(e)}'}, 500
 
 @app.route('/chat', methods=['POST'])
 def chat():
