@@ -1,10 +1,76 @@
 from langchain_core.tools import tool, StructuredTool
-from typing import Optional
+from typing import Optional, Any, Type
 import math
 import re
 import asyncio
 import json
+from pydantic import BaseModel, Field, create_model
 from mcp_manager import mcp_manager
+
+
+def json_schema_to_pydantic(schema: dict, model_name: str = "DynamicModel") -> Type[BaseModel]:
+    """Convert a JSON schema to a Pydantic model.
+
+    Args:
+        schema: JSON schema dictionary with 'properties' and optional 'required' keys
+        model_name: Name for the generated model class
+
+    Returns:
+        A Pydantic BaseModel class
+    """
+    properties = schema.get('properties', {})
+    required = set(schema.get('required', []))
+
+    field_definitions = {}
+
+    for prop_name, prop_schema in properties.items():
+        python_type = _json_type_to_python(prop_schema.get('type', 'string'))
+
+        # Build Field kwargs from schema constraints
+        field_kwargs = {}
+
+        if 'description' in prop_schema:
+            field_kwargs['description'] = prop_schema['description']
+
+        if 'minimum' in prop_schema:
+            field_kwargs['ge'] = prop_schema['minimum']
+
+        if 'maximum' in prop_schema:
+            field_kwargs['le'] = prop_schema['maximum']
+
+        if 'minLength' in prop_schema:
+            field_kwargs['min_length'] = prop_schema['minLength']
+
+        if 'maxLength' in prop_schema:
+            field_kwargs['max_length'] = prop_schema['maxLength']
+
+        # Handle default values
+        if 'default' in prop_schema:
+            field_kwargs['default'] = prop_schema['default']
+        elif prop_name not in required:
+            field_kwargs['default'] = None
+            python_type = Optional[python_type]
+
+        # Create the field definition tuple: (type, Field(...))
+        if field_kwargs:
+            field_definitions[prop_name] = (python_type, Field(**field_kwargs))
+        else:
+            field_definitions[prop_name] = (python_type, ...)
+
+    return create_model(model_name, **field_definitions)
+
+
+def _json_type_to_python(json_type: str) -> type:
+    """Map JSON schema type to Python type."""
+    type_map = {
+        'string': str,
+        'integer': int,
+        'number': float,
+        'boolean': bool,
+        'array': list,
+        'object': dict,
+    }
+    return type_map.get(json_type, Any)
 
 @tool
 def web_search(query: str) -> str:
@@ -104,21 +170,23 @@ def create_mcp_tool_wrapper(tool_config):
         loop.close()
         return result
 
-    # Parse schema if available
+    # Parse schema and create Pydantic model if available
     args_schema = None
     if tool_config.get('tool_schema'):
         try:
             schema_dict = json.loads(tool_config['tool_schema'])
-            # The schema can be used to validate arguments
-            # For now, we'll use a simple dict-based approach
-            args_schema = schema_dict
-        except:
-            pass
+            # Create a unique model name based on the tool name
+            model_name = ''.join(word.capitalize() for word in tool_config['name'].split('_')) + 'Args'
+            args_schema = json_schema_to_pydantic(schema_dict, model_name)
+        except Exception as e:
+            # Log but don't fail - tool will still work without schema
+            print(f"Warning: Could not parse schema for {tool_config['name']}: {e}")
 
     return StructuredTool.from_function(
         func=sync_mcp_call,
         name=tool_config['name'],
         description=tool_config['description'],
+        args_schema=args_schema,
     )
 
 def get_enabled_tools(tool_configs):
