@@ -216,3 +216,7 @@ frontend/.env*.local
 # OS
 .DS_Store
 Thumbs.db
+
+# Application-specific
+backend/tools.db
+backend/mcp_servers.json
