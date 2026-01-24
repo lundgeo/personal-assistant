@@ -124,12 +124,12 @@ def add_mcp_server():
 
             mcp_manager.add_server(name, transport, command=command, args=args, env=env)
 
-        elif transport == 'sse':
+        elif transport == 'http':
             url = data.get('url')
             headers = data.get('headers', {})
 
             if not url:
-                return {'error': 'URL is required for sse transport'}, 400
+                return {'error': 'URL is required for http transport'}, 400
 
             mcp_manager.add_server(name, transport, url=url, headers=headers)
 

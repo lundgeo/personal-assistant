@@ -35,12 +35,12 @@ class MCPManager:
 
         Args:
             name: Server name
-            transport: 'stdio' for local process or 'sse' for remote HTTP server
+            transport: 'stdio' for local process or 'http' for remote MCP server
             command: Command to run (for stdio transport)
             args: Command arguments (for stdio transport)
             env: Environment variables (for stdio transport)
-            url: Server URL (for sse transport)
-            headers: HTTP headers (for sse transport)
+            url: Server URL (for http transport)
+            headers: HTTP headers (for http transport)
         """
         server_config = {'transport': transport}
 
@@ -52,15 +52,15 @@ class MCPManager:
                 'args': args or [],
                 'env': env or {}
             })
-        elif transport == 'sse':
+        elif transport == 'http':
             if not url:
-                raise ValueError("url is required for sse transport")
+                raise ValueError("url is required for http transport")
             server_config.update({
                 'url': url,
                 'headers': headers or {}
             })
         else:
-            raise ValueError(f"Unsupported transport: {transport}. Use 'stdio' or 'sse'")
+            raise ValueError(f"Unsupported transport: {transport}. Use 'stdio' or 'http'")
 
         self.servers[name] = server_config
         self.save_config()
@@ -80,8 +80,8 @@ class MCPManager:
 
             if transport == 'stdio':
                 return await self._discover_tools_stdio(server_name, server_config)
-            elif transport == 'sse':
-                return await self._discover_tools_sse(server_name, server_config)
+            elif transport == 'http':
+                return await self._discover_tools_http(server_name, server_config)
             else:
                 print(f"Unknown transport type: {transport}")
                 return []
@@ -115,8 +115,8 @@ class MCPManager:
 
                 return discovered_tools
 
-    async def _discover_tools_sse(self, server_name: str, server_config: dict) -> List[dict]:
-        """Discover tools from an SSE-based remote MCP server."""
+    async def _discover_tools_http(self, server_name: str, server_config: dict) -> List[dict]:
+        """Discover tools from a remote HTTP MCP server."""
         url = server_config['url']
         headers = server_config.get('headers', {})
 
@@ -197,8 +197,8 @@ class MCPManager:
         try:
             if transport == 'stdio':
                 return await self._call_tool_stdio(server_config, tool_name, arguments)
-            elif transport == 'sse':
-                return await self._call_tool_sse(server_config, tool_name, arguments)
+            elif transport == 'http':
+                return await self._call_tool_http(server_config, tool_name, arguments)
             else:
                 return f"Error: Unknown transport type '{transport}'"
         except Exception as e:
@@ -228,8 +228,8 @@ class MCPManager:
 
                 return str(result)
 
-    async def _call_tool_sse(self, server_config: dict, tool_name: str, arguments: dict) -> str:
-        """Call a tool on an SSE-based remote MCP server."""
+    async def _call_tool_http(self, server_config: dict, tool_name: str, arguments: dict) -> str:
+        """Call a tool on a remote HTTP MCP server."""
         url = server_config['url']
         headers = server_config.get('headers', {})
 

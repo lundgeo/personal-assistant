@@ -21,9 +21,12 @@ interface Tool {
 
 interface MCPServer {
   name: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
+  transport: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
 }
 
 export default function Home() {
@@ -37,8 +40,10 @@ export default function Home() {
   const [mcpServers, setMcpServers] = useState<Record<string, MCPServer>>({});
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [newServerName, setNewServerName] = useState('');
+  const [newServerTransport, setNewServerTransport] = useState<'stdio' | 'http'>('stdio');
   const [newServerCommand, setNewServerCommand] = useState('');
   const [newServerArgs, setNewServerArgs] = useState('');
+  const [newServerUrl, setNewServerUrl] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -70,22 +75,32 @@ export default function Home() {
   };
 
   const handleAddMcpServer = async () => {
-    if (!newServerName || !newServerCommand) return;
+    if (!newServerName) return;
+    if (newServerTransport === 'stdio' && !newServerCommand) return;
+    if (newServerTransport === 'http' && !newServerUrl) return;
 
     try {
-      const args = newServerArgs ? newServerArgs.split(' ').filter(arg => arg.trim()) : [];
+      const requestBody: any = {
+        name: newServerName,
+        transport: newServerTransport,
+      };
+
+      if (newServerTransport === 'stdio') {
+        const args = newServerArgs ? newServerArgs.split(' ').filter(arg => arg.trim()) : [];
+        requestBody.command = newServerCommand;
+        requestBody.args = args;
+        requestBody.env = {};
+      } else if (newServerTransport === 'http') {
+        requestBody.url = newServerUrl;
+        requestBody.headers = {};
+      }
 
       const response = await fetch('http://localhost:3001/mcp-servers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          name: newServerName,
-          command: newServerCommand,
-          args: args,
-          env: {}
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -93,8 +108,10 @@ export default function Home() {
         await fetchTools();
         setShowMcpModal(false);
         setNewServerName('');
+        setNewServerTransport('stdio');
         setNewServerCommand('');
         setNewServerArgs('');
+        setNewServerUrl('');
       }
     } catch (error) {
       console.error('Error adding MCP server:', error);
@@ -383,8 +400,19 @@ export default function Home() {
                   <div key={name} className="border border-gray-200 rounded p-2 bg-gray-50">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <p className="text-xs font-semibold text-gray-800">{name}</p>
-                        <p className="text-xs text-gray-500">{server.command}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold text-gray-800">{name}</p>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            server.transport === 'http'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-gray-200 text-gray-700'
+                          }`}>
+                            {server.transport || 'stdio'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {server.transport === 'http' ? server.url : server.command}
+                        </p>
                       </div>
                       <button
                         onClick={() => handleDeleteMcpServer(name)}
@@ -470,35 +498,69 @@ export default function Home() {
             </div>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Command:
+                Transport Type:
               </label>
-              <input
-                type="text"
-                value={newServerCommand}
-                onChange={(e) => setNewServerCommand(e.target.value)}
+              <select
+                value={newServerTransport}
+                onChange={(e) => setNewServerTransport(e.target.value as 'stdio' | 'http')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
-                placeholder="e.g., npx, python, node, etc."
-              />
+              >
+                <option value="stdio">Local (stdio) - Run command locally</option>
+                <option value="http">Remote (HTTP) - Connect to remote MCP server</option>
+              </select>
             </div>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Arguments (space-separated):
-              </label>
-              <input
-                type="text"
-                value={newServerArgs}
-                onChange={(e) => setNewServerArgs(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
-                placeholder="e.g., -y @modelcontextprotocol/server-filesystem /path/to/dir"
-              />
-            </div>
+
+            {newServerTransport === 'stdio' ? (
+              <>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Command:
+                  </label>
+                  <input
+                    type="text"
+                    value={newServerCommand}
+                    onChange={(e) => setNewServerCommand(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                    placeholder="e.g., npx, python, node, etc."
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Arguments (space-separated):
+                  </label>
+                  <input
+                    type="text"
+                    value={newServerArgs}
+                    onChange={(e) => setNewServerArgs(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                    placeholder="e.g., -y @modelcontextprotocol/server-filesystem /path/to/dir"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Server URL:
+                </label>
+                <input
+                  type="text"
+                  value={newServerUrl}
+                  onChange={(e) => setNewServerUrl(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-800"
+                  placeholder="e.g., http://localhost:8000/mcp or https://mcp.example.com"
+                />
+              </div>
+            )}
+
             <div className="flex gap-2 justify-end">
               <button
                 onClick={() => {
                   setShowMcpModal(false);
                   setNewServerName('');
+                  setNewServerTransport('stdio');
                   setNewServerCommand('');
                   setNewServerArgs('');
+                  setNewServerUrl('');
                 }}
                 className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
               >
