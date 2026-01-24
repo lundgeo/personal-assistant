@@ -3,7 +3,7 @@ from flask_cors import CORS
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
 from langchain_ollama import ChatOllama
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
 import json
@@ -26,7 +26,11 @@ init_db(app)
 
 # Sync MCP tools after database initialization
 try:
-    mcp_manager.sync_tools_to_database(app)
+    sync_result = mcp_manager.sync_tools_to_database(app)
+    if sync_result['errors']:
+        print(f"Warning: Some MCP tools failed to sync: {sync_result['errors']}")
+    if sync_result['tools_added'] > 0:
+        print(f"Added {sync_result['tools_added']} MCP tools")
 except Exception as e:
     print(f"Warning: Failed to sync MCP tools: {str(e)}")
 
@@ -137,8 +141,17 @@ def add_mcp_server():
             return {'error': f'Unsupported transport type: {transport}'}, 400
 
         # Sync tools from new server
-        mcp_manager.sync_tools_to_database(app)
-        return {'message': 'MCP server added successfully'}, 201
+        sync_result = mcp_manager.sync_tools_to_database(app, server_name=name)
+
+        response = {
+            'message': 'MCP server added successfully',
+            'tools_added': sync_result['tools_added']
+        }
+
+        if sync_result['errors']:
+            response['warnings'] = sync_result['errors']
+
+        return response, 201
     except Exception as e:
         return {'error': f'Failed to add server: {str(e)}'}, 500
 
@@ -156,8 +169,15 @@ def delete_mcp_server(server_name):
 def sync_mcp_servers():
     """Manually trigger MCP tool sync."""
     try:
-        mcp_manager.sync_tools_to_database(app)
-        return {'message': 'MCP tools synced successfully'}, 200
+        sync_result = mcp_manager.sync_tools_to_database(app)
+        response = {
+            'message': 'MCP tools synced successfully',
+            'tools_added': sync_result['tools_added'],
+            'tools_removed': sync_result['tools_removed']
+        }
+        if sync_result['errors']:
+            response['warnings'] = sync_result['errors']
+        return response, 200
     except Exception as e:
         return {'error': f'Failed to sync tools: {str(e)}'}, 500
 
@@ -177,6 +197,9 @@ def chat():
 
             # Get tool functions
             tools = get_enabled_tools(tool_configs)
+
+            # Build a map of tool name -> tool function for execution
+            tool_map = {t.name: t for t in tools}
 
             # Build system message with tool context
             base_context = "You are a helpful AI assistant."
@@ -198,18 +221,88 @@ def chat():
             else:
                 llm_with_tools = llm
 
-            # Stream the response
-            for chunk in llm_with_tools.stream(messages):
-                content = chunk.content
-                if content:
-                    # Send as JSON with newline delimiter
-                    yield f"data: {json.dumps({'content': content})}\n\n"
+            # Tool execution loop - keep going until no more tool calls
+            max_iterations = 10  # Prevent infinite loops
+            iteration = 0
 
-                # Handle tool calls if present
-                if hasattr(chunk, 'tool_calls') and chunk.tool_calls:
-                    for tool_call in chunk.tool_calls:
-                        tool_name = tool_call.get('name', 'unknown')
-                        yield f"data: {json.dumps({'content': f' [Using tool: {tool_name}]'})}\n\n"
+            while iteration < max_iterations:
+                iteration += 1
+
+                # Collect the full response (we need complete tool_calls before executing)
+                full_response = None
+                collected_content = []
+
+                for chunk in llm_with_tools.stream(messages):
+                    # Stream text content to the client
+                    content = chunk.content
+                    if content:
+                        if isinstance(content, list):
+                            content = ''.join(
+                                block.get('text', '') if isinstance(block, dict) else str(block)
+                                for block in content
+                            )
+                        elif not isinstance(content, str):
+                            content = str(content)
+                        if content:
+                            collected_content.append(content)
+                            yield f"data: {json.dumps({'content': content})}\n\n"
+
+                    # Accumulate the full response to get complete tool calls
+                    if full_response is None:
+                        full_response = chunk
+                    else:
+                        full_response = full_response + chunk
+
+                # Check if there are tool calls to execute
+                if not full_response or not hasattr(full_response, 'tool_calls') or not full_response.tool_calls:
+                    break  # No tool calls, we're done
+
+                # Execute each tool call
+                tool_results = []
+                for tool_call in full_response.tool_calls:
+                    tool_name = tool_call.get('name') if isinstance(tool_call, dict) else getattr(tool_call, 'name', '')
+                    tool_args = tool_call.get('args', {}) if isinstance(tool_call, dict) else getattr(tool_call, 'args', {})
+                    tool_id = tool_call.get('id') if isinstance(tool_call, dict) else getattr(tool_call, 'id', '')
+
+                    if not tool_name:
+                        continue
+
+                    yield f"data: {json.dumps({'content': f' [Using tool: {tool_name}]'})}\n\n"
+
+                    # Execute the tool
+                    if tool_name in tool_map:
+                        try:
+                            tool_func = tool_map[tool_name]
+                            result = tool_func.invoke(tool_args)
+                            tool_results.append({
+                                'tool_call_id': tool_id,
+                                'name': tool_name,
+                                'content': str(result)
+                            })
+                        except Exception as e:
+                            tool_results.append({
+                                'tool_call_id': tool_id,
+                                'name': tool_name,
+                                'content': f"Error executing tool: {str(e)}"
+                            })
+                    else:
+                        tool_results.append({
+                            'tool_call_id': tool_id,
+                            'name': tool_name,
+                            'content': f"Tool '{tool_name}' not found"
+                        })
+
+                # Add the assistant's response and tool results to messages
+                messages.append(AIMessage(
+                    content=''.join(collected_content),
+                    tool_calls=full_response.tool_calls
+                ))
+
+                for result in tool_results:
+                    messages.append(ToolMessage(
+                        content=result['content'],
+                        tool_call_id=result['tool_call_id']
+                    ))
 
             # Send completion signal
             yield f"data: {json.dumps({'done': True})}\n\n"
