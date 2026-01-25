@@ -11,6 +11,7 @@ import os
 from database import db, Tool, init_db
 from tools import get_enabled_tools, build_tool_context
 from mcp_manager import mcp_manager
+from auth import require_auth, optional_auth
 
 load_dotenv()
 
@@ -83,12 +84,14 @@ def health():
     return {'status': 'healthy'}, 200
 
 @app.route('/tools', methods=['GET'])
+@require_auth
 def get_tools():
     """Get all available tools with their configurations."""
     tools = Tool.query.all()
     return jsonify([tool.to_dict() for tool in tools]), 200
 
 @app.route('/tools/<int:tool_id>', methods=['PUT'])
+@require_auth
 def update_tool(tool_id):
     """Update a tool's custom context and enabled status."""
     tool = Tool.query.get_or_404(tool_id)
@@ -103,11 +106,13 @@ def update_tool(tool_id):
     return jsonify(tool.to_dict()), 200
 
 @app.route('/mcp-servers', methods=['GET'])
+@require_auth
 def get_mcp_servers():
     """Get all configured MCP servers."""
     return jsonify(mcp_manager.servers), 200
 
 @app.route('/mcp-servers', methods=['POST'])
+@require_auth
 def add_mcp_server():
     """Add a new MCP server."""
     data = request.json
@@ -156,6 +161,7 @@ def add_mcp_server():
         return {'error': f'Failed to add server: {str(e)}'}, 500
 
 @app.route('/mcp-servers/<server_name>', methods=['DELETE'])
+@require_auth
 def delete_mcp_server(server_name):
     """Delete an MCP server."""
     if mcp_manager.remove_server(server_name):
@@ -166,6 +172,7 @@ def delete_mcp_server(server_name):
     return {'error': 'MCP server not found'}, 404
 
 @app.route('/mcp-servers/sync', methods=['POST'])
+@require_auth
 def sync_mcp_servers():
     """Manually trigger MCP tool sync."""
     try:
@@ -182,6 +189,7 @@ def sync_mcp_servers():
         return {'error': f'Failed to sync tools: {str(e)}'}, 500
 
 @app.route('/chat', methods=['POST'])
+@require_auth
 def chat():
     data = request.json
     user_message = data.get('message', '')

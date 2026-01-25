@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
+import UserButton from './components/UserButton';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -31,6 +34,8 @@ interface MCPServer {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -47,13 +52,34 @@ export default function Home() {
   const [newServerUrl, setNewServerUrl] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (session?.idToken) {
+      headers['Authorization'] = `Bearer ${session.idToken}`;
+    }
+    return headers;
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const fetchTools = async () => {
+    if (!session?.idToken) return;
     try {
-      const response = await fetch('http://localhost:3001/tools');
+      const response = await fetch('http://localhost:3001/tools', {
+        headers: getAuthHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setTools(data);
@@ -64,8 +90,11 @@ export default function Home() {
   };
 
   const fetchMcpServers = async () => {
+    if (!session?.idToken) return;
     try {
-      const response = await fetch('http://localhost:3001/mcp-servers');
+      const response = await fetch('http://localhost:3001/mcp-servers', {
+        headers: getAuthHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setMcpServers(data);
@@ -98,9 +127,7 @@ export default function Home() {
 
       const response = await fetch('http://localhost:3001/mcp-servers', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(requestBody),
       });
 
@@ -125,6 +152,7 @@ export default function Home() {
     try {
       const response = await fetch(`http://localhost:3001/mcp-servers/${serverName}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -140,6 +168,7 @@ export default function Home() {
     try {
       const response = await fetch('http://localhost:3001/mcp-servers/sync', {
         method: 'POST',
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -161,9 +190,7 @@ export default function Home() {
     try {
       const response = await fetch(`http://localhost:3001/tools/${editingTool.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ custom_context: editContext }),
       });
 
@@ -181,9 +208,7 @@ export default function Home() {
     try {
       const response = await fetch(`http://localhost:3001/tools/${tool.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ enabled: !tool.enabled }),
       });
 
@@ -200,9 +225,11 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
-    fetchTools();
-    fetchMcpServers();
-  }, []);
+    if (session?.idToken) {
+      fetchTools();
+      fetchMcpServers();
+    }
+  }, [session?.idToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,9 +248,7 @@ export default function Home() {
     try {
       const response = await fetch('http://localhost:3001/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ message: userMessage }),
       });
 
@@ -294,6 +319,20 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+
+  // Show loading state while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (status === 'unauthenticated') {
+    return null;
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -581,12 +620,15 @@ export default function Home() {
       <div className="flex flex-col flex-1">
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-800">AI Chatbot</h1>
-          <button
-            onClick={() => setShowToolsPanel(!showToolsPanel)}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            {showToolsPanel ? 'Hide Tools' : 'Show Tools'}
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowToolsPanel(!showToolsPanel)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              {showToolsPanel ? 'Hide Tools' : 'Show Tools'}
+            </button>
+            <UserButton />
+          </div>
         </header>
 
       <div className="flex-1 overflow-y-auto px-6 py-4">
