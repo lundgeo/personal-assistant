@@ -1,7 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
+import UserButton from './components/UserButton';
 import { config } from './config';
 
 interface Message {
@@ -32,6 +35,8 @@ interface MCPServer {
 }
 
 export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -48,13 +53,34 @@ export default function Home() {
   const [newServerUrl, setNewServerUrl] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, router]);
+
+  // Helper function to get auth headers
+  const getAuthHeaders = () => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (session?.idToken) {
+      headers['Authorization'] = `Bearer ${session.idToken}`;
+    }
+    return headers;
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   const fetchTools = async () => {
+    if (!session?.idToken) return;
     try {
-      const response = await fetch(`${config.apiBaseUrl}/tools`);
+      const response = await fetch(`${config.apiBaseUrl}/tools`, {
+        headers: getAuthHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setTools(data);
@@ -65,8 +91,11 @@ export default function Home() {
   };
 
   const fetchMcpServers = async () => {
+    if (!session?.idToken) return;
     try {
-      const response = await fetch(`${config.apiBaseUrl}/mcp-servers`);
+      const response = await fetch(`${config.apiBaseUrl}/mcp-servers`, {
+        headers: getAuthHeaders(),
+      });
       if (response.ok) {
         const data = await response.json();
         setMcpServers(data);
@@ -99,9 +128,7 @@ export default function Home() {
 
       const response = await fetch(`${config.apiBaseUrl}/mcp-servers`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(requestBody),
       });
 
@@ -126,6 +153,7 @@ export default function Home() {
     try {
       const response = await fetch(`${config.apiBaseUrl}/mcp-servers/${serverName}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -141,6 +169,7 @@ export default function Home() {
     try {
       const response = await fetch(`${config.apiBaseUrl}/mcp-servers/sync`, {
         method: 'POST',
+        headers: getAuthHeaders(),
       });
 
       if (response.ok) {
@@ -162,9 +191,7 @@ export default function Home() {
     try {
       const response = await fetch(`${config.apiBaseUrl}/tools/${editingTool.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ custom_context: editContext }),
       });
 
@@ -182,9 +209,7 @@ export default function Home() {
     try {
       const response = await fetch(`${config.apiBaseUrl}/tools/${tool.id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ enabled: !tool.enabled }),
       });
 
@@ -201,9 +226,11 @@ export default function Home() {
   }, [messages]);
 
   useEffect(() => {
-    fetchTools();
-    fetchMcpServers();
-  }, []);
+    if (session?.idToken) {
+      fetchTools();
+      fetchMcpServers();
+    }
+  }, [session?.idToken]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,9 +249,7 @@ export default function Home() {
     try {
       const response = await fetch(`${config.apiBaseUrl}/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ message: userMessage }),
       });
 
@@ -296,6 +321,20 @@ export default function Home() {
     }
   };
 
+  // Show loading state while checking authentication
+  if (status === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gray-50">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if not authenticated (will redirect)
+  if (status === 'unauthenticated') {
+    return null;
+  }
+
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Tools Panel */}
@@ -325,11 +364,10 @@ export default function Home() {
                     </div>
                     <button
                       onClick={() => handleToolToggle(tool)}
-                      className={`ml-2 px-2 py-1 rounded text-xs ${
-                        tool.enabled
+                      className={`ml-2 px-2 py-1 rounded text-xs ${tool.enabled
                           ? 'bg-green-100 text-green-700'
                           : 'bg-gray-100 text-gray-500'
-                      }`}
+                        }`}
                     >
                       {tool.enabled ? 'ON' : 'OFF'}
                     </button>
@@ -362,11 +400,10 @@ export default function Home() {
                       </div>
                       <button
                         onClick={() => handleToolToggle(tool)}
-                        className={`ml-2 px-2 py-1 rounded text-xs ${
-                          tool.enabled
+                        className={`ml-2 px-2 py-1 rounded text-xs ${tool.enabled
                             ? 'bg-green-100 text-green-700'
                             : 'bg-gray-100 text-gray-500'
-                        }`}
+                          }`}
                       >
                         {tool.enabled ? 'ON' : 'OFF'}
                       </button>
@@ -404,11 +441,10 @@ export default function Home() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <p className="text-xs font-semibold text-gray-800">{name}</p>
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${
-                            server.transport === 'http'
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${server.transport === 'http'
                               ? 'bg-blue-100 text-blue-700'
                               : 'bg-gray-200 text-gray-700'
-                          }`}>
+                            }`}>
                             {server.transport || 'stdio'}
                           </span>
                         </div>
@@ -581,48 +617,51 @@ export default function Home() {
 
       <div className="flex flex-col flex-1">
         <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-gray-800">AI Chatbot</h1>
-          <button
-            onClick={() => setShowToolsPanel(!showToolsPanel)}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            {showToolsPanel ? 'Hide Tools' : 'Show Tools'}
-          </button>
+          <h1 className="text-2xl font-bold text-gray-800">Personal Assistant</h1>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setShowToolsPanel(!showToolsPanel)}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              {showToolsPanel ? 'Hide Tools' : 'Show Tools'}
+            </button>
+            <UserButton />
+          </div>
         </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="max-w-3xl mx-auto space-y-4">
-          {messages.length === 0 ? (
-            <div className="text-center text-gray-500 mt-20">
-              <p className="text-lg">Start a conversation with the AI assistant</p>
-              <p className="text-sm mt-2">Type your message below to get started</p>
-            </div>
-          ) : (
-            messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="max-w-3xl mx-auto space-y-4">
+            {messages.length === 0 ? (
+              <div className="text-center text-gray-500 mt-20">
+                <p className="text-lg">Start a conversation with the AI assistant</p>
+                <p className="text-sm mt-2">Type your message below to get started</p>
+              </div>
+            ) : (
+              messages.map((message, index) => (
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === 'user'
+                  key={index}
+                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === 'user'
                       ? 'bg-blue-500 text-white'
                       : 'bg-white text-gray-800 border border-gray-200'
-                    }`}
-                >
-                  {message.role === 'user' ? (
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  ) : (
-                    <div className="prose prose-sm max-w-none">
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
-                    </div>
-                  )}
+                      }`}
+                  >
+                    {message.role === 'user' ? (
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    ) : (
+                      <div className="prose prose-sm max-w-none">
+                        <ReactMarkdown>{message.content}</ReactMarkdown>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
-          )}
-          <div ref={messagesEndRef} />
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
         </div>
-      </div>
 
         <div className="border-t border-gray-200 bg-white px-6 py-4">
           <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">

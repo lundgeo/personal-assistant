@@ -21,6 +21,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "flask-sqlalchemy>=3.0.0",
     "mcp>=1.0.0",
+    "google-auth>=2.0.0",
+    "PyJWT>=2.0.0",
+    "requests>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +32,7 @@ aws = [
 ]
 
 [tool.setuptools]
-py-modules = ["app", "database", "tools", "mcp_manager", "lambda_handler"]
+py-modules = ["app", "database", "tools", "mcp_manager", "auth", "lambda_handler"]
 
 [tool.setuptools.packages.find]
 include = ["repositories*"]
