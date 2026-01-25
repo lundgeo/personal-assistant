@@ -8,7 +8,7 @@ from langchain_core.output_parsers import StrOutputParser
 from dotenv import load_dotenv
 import json
 import os
-from database import db, Tool, init_db
+from repositories import get_repository
 from tools import get_enabled_tools, build_tool_context
 from mcp_manager import mcp_manager
 
@@ -17,16 +17,22 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tools.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Database configuration - only needed for SQLite
+database_type = os.environ.get('DATABASE_TYPE', 'sqlite').lower()
+if database_type == 'sqlite':
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+        'SQLALCHEMY_DATABASE_URI',
+        'sqlite:///tools.db'
+    )
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize database
-init_db(app)
+# Initialize repository (handles both SQLite and DynamoDB)
+repository = get_repository(app)
+repository.initialize_defaults()
 
-# Sync MCP tools after database initialization
+# Sync MCP tools after repository initialization
 try:
-    sync_result = mcp_manager.sync_tools_to_database(app)
+    sync_result = mcp_manager.sync_tools_to_database(repository)
     if sync_result['errors']:
         print(f"Warning: Some MCP tools failed to sync: {sync_result['errors']}")
     if sync_result['tools_added'] > 0:
@@ -85,22 +91,26 @@ def health():
 @app.route('/tools', methods=['GET'])
 def get_tools():
     """Get all available tools with their configurations."""
-    tools = Tool.query.all()
+    tools = repository.get_all()
     return jsonify([tool.to_dict() for tool in tools]), 200
 
 @app.route('/tools/<int:tool_id>', methods=['PUT'])
 def update_tool(tool_id):
     """Update a tool's custom context and enabled status."""
-    tool = Tool.query.get_or_404(tool_id)
+    tool = repository.get_by_id(tool_id)
+    if not tool:
+        return {'error': 'Tool not found'}, 404
+
     data = request.json
+    updates = {}
 
     if 'custom_context' in data:
-        tool.custom_context = data['custom_context']
+        updates['custom_context'] = data['custom_context']
     if 'enabled' in data:
-        tool.enabled = data['enabled']
+        updates['enabled'] = data['enabled']
 
-    db.session.commit()
-    return jsonify(tool.to_dict()), 200
+    updated_tool = repository.update(tool_id, updates)
+    return jsonify(updated_tool.to_dict()), 200
 
 @app.route('/mcp-servers', methods=['GET'])
 def get_mcp_servers():
@@ -141,7 +151,7 @@ def add_mcp_server():
             return {'error': f'Unsupported transport type: {transport}'}, 400
 
         # Sync tools from new server
-        sync_result = mcp_manager.sync_tools_to_database(app, server_name=name)
+        sync_result = mcp_manager.sync_tools_to_database(repository, server_name=name)
 
         response = {
             'message': 'MCP server added successfully',
@@ -160,8 +170,7 @@ def delete_mcp_server(server_name):
     """Delete an MCP server."""
     if mcp_manager.remove_server(server_name):
         # Remove associated tools from database
-        Tool.query.filter_by(source='mcp', mcp_server_name=server_name).delete()
-        db.session.commit()
+        repository.delete_by_mcp_server(server_name)
         return {'message': 'MCP server deleted successfully'}, 200
     return {'error': 'MCP server not found'}, 404
 
@@ -169,7 +178,7 @@ def delete_mcp_server(server_name):
 def sync_mcp_servers():
     """Manually trigger MCP tool sync."""
     try:
-        sync_result = mcp_manager.sync_tools_to_database(app)
+        sync_result = mcp_manager.sync_tools_to_database(repository)
         response = {
             'message': 'MCP tools synced successfully',
             'tools_added': sync_result['tools_added'],
@@ -191,9 +200,9 @@ def chat():
 
     def generate():
         try:
-            # Get enabled tools from database
-            tools_query = Tool.query.filter_by(enabled=True).all()
-            tool_configs = [tool.to_dict() for tool in tools_query]
+            # Get enabled tools from repository
+            enabled_tools = repository.get_enabled()
+            tool_configs = [tool.to_dict() for tool in enabled_tools]
 
             # Get tool functions
             tools = get_enabled_tools(tool_configs)

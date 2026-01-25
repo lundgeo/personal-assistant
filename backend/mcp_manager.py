@@ -1,11 +1,13 @@
 import json
 import os
 import asyncio
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamablehttp_client
-from database import db, Tool
+
+if TYPE_CHECKING:
+    from repositories.base import ToolRepository
 
 class MCPManager:
     """Manager for MCP server connections and tool discovery."""
@@ -168,66 +170,69 @@ class MCPManager:
 
         return all_tools, errors
 
-    def sync_tools_to_database(self, app, server_name: str = None) -> dict:
+    def sync_tools_to_database(self, repository: 'ToolRepository', server_name: str = None) -> dict:
         """Synchronize discovered MCP tools to database.
 
         Args:
-            app: Flask application instance
+            repository: ToolRepository instance for database operations
             server_name: Optional specific server to sync. If None, syncs all servers.
 
         Returns:
             Dictionary with 'tools_added', 'tools_removed', and 'errors' keys
         """
+        from repositories.base import ToolEntity
+
         result = {'tools_added': 0, 'tools_removed': 0, 'errors': []}
 
-        with app.app_context():
-            # Discover tools synchronously
+        # Discover tools synchronously
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
             try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    discovered_tools, errors = loop.run_until_complete(self.discover_all_tools())
-                    result['errors'].extend(errors)
-                finally:
-                    loop.close()
-            except Exception as e:
-                result['errors'].append(f"Failed to run tool discovery: {str(e)}")
-                return result
+                discovered_tools, errors = loop.run_until_complete(self.discover_all_tools())
+                result['errors'].extend(errors)
+            finally:
+                loop.close()
+        except Exception as e:
+            result['errors'].append(f"Failed to run tool discovery: {str(e)}")
+            return result
 
-            # Filter to specific server if requested
-            if server_name:
-                discovered_tools = [t for t in discovered_tools if t['server_name'] == server_name]
+        # Filter to specific server if requested
+        if server_name:
+            discovered_tools = [t for t in discovered_tools if t['server_name'] == server_name]
 
-            # Get existing MCP tools from database
-            existing_mcp_tools = Tool.query.filter_by(source='mcp').all()
-            existing_tool_keys = {f"{tool.mcp_server_name}:{tool.name.replace(f'{tool.mcp_server_name}_', '')}" for tool in existing_mcp_tools}
+        # Get existing MCP tools from all servers
+        all_tools = repository.get_all()
+        existing_mcp_tools = [t for t in all_tools if t.source == 'mcp']
+        existing_tool_keys = {
+            f"{tool.mcp_server_name}:{tool.name.replace(f'{tool.mcp_server_name}_', '')}"
+            for tool in existing_mcp_tools
+        }
 
-            # Add new MCP tools to database
-            for tool_data in discovered_tools:
-                tool_key = f"{tool_data['server_name']}:{tool_data['name']}"
+        # Add new MCP tools to database
+        for tool_data in discovered_tools:
+            tool_key = f"{tool_data['server_name']}:{tool_data['name']}"
 
-                if tool_key not in existing_tool_keys:
-                    # Create new tool entry
-                    new_tool = Tool(
-                        name=f"{tool_data['server_name']}_{tool_data['name']}",
-                        description=tool_data['description'],
-                        default_context=f"You are using the {tool_data['name']} tool from {tool_data['server_name']} MCP server.",
-                        source='mcp',
-                        mcp_server_name=tool_data['server_name'],
-                        tool_schema=tool_data.get('schema'),
-                        enabled=True
-                    )
-                    db.session.add(new_tool)
-                    result['tools_added'] += 1
+            if tool_key not in existing_tool_keys:
+                # Create new tool entry
+                new_tool = ToolEntity(
+                    name=f"{tool_data['server_name']}_{tool_data['name']}",
+                    description=tool_data['description'],
+                    default_context=f"You are using the {tool_data['name']} tool from {tool_data['server_name']} MCP server.",
+                    source='mcp',
+                    mcp_server_name=tool_data['server_name'],
+                    tool_schema=tool_data.get('schema'),
+                    enabled=True
+                )
+                repository.create(new_tool)
+                result['tools_added'] += 1
 
-            # Remove tools from servers that no longer exist
-            current_server_names = set(self.servers.keys())
-            for tool in existing_mcp_tools:
-                if tool.mcp_server_name not in current_server_names:
-                    db.session.delete(tool)
-                    result['tools_removed'] += 1
-
-            db.session.commit()
+        # Remove tools from servers that no longer exist
+        current_server_names = set(self.servers.keys())
+        for tool in existing_mcp_tools:
+            if tool.mcp_server_name not in current_server_names:
+                repository.delete(tool.id)
+                result['tools_removed'] += 1
 
         return result
 

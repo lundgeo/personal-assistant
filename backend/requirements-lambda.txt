@@ -1,0 +1,19 @@
+# Lambda deployment dependencies
+# These are installed into the Lambda deployment package
+
+flask>=3.0.0
+flask-cors>=4.0.0
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-anthropic>=0.1.0
+langchain-core>=0.1.0
+openai>=1.0.0
+anthropic>=0.18.0
+python-dotenv>=1.0.0
+boto3>=1.34.0
+pydantic>=2.0.0
+
+# Note: boto3 is provided by Lambda runtime but we include it for consistency
+# Note: langchain-ollama is excluded as Ollama is not available in Lambda environment
+# Note: flask-sqlalchemy is excluded as we use DynamoDB in Lambda
+# Note: mcp is excluded as MCP servers require local process management

@@ -23,5 +23,13 @@ dependencies = [
     "mcp>=1.0.0",
 ]
 
+[project.optional-dependencies]
+aws = [
+    "boto3>=1.34.0",
+]
+
 [tool.setuptools]
-py-modules = ["app", "database", "tools", "mcp_manager"]
+py-modules = ["app", "database", "tools", "mcp_manager", "lambda_handler"]
+
+[tool.setuptools.packages.find]
+include = ["repositories*"]

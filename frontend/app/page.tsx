@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { config } from './config';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -53,7 +54,7 @@ export default function Home() {
 
   const fetchTools = async () => {
     try {
-      const response = await fetch('http://localhost:3001/tools');
+      const response = await fetch(`${config.apiBaseUrl}/tools`);
       if (response.ok) {
         const data = await response.json();
         setTools(data);
@@ -65,7 +66,7 @@ export default function Home() {
 
   const fetchMcpServers = async () => {
     try {
-      const response = await fetch('http://localhost:3001/mcp-servers');
+      const response = await fetch(`${config.apiBaseUrl}/mcp-servers`);
       if (response.ok) {
         const data = await response.json();
         setMcpServers(data);
@@ -96,7 +97,7 @@ export default function Home() {
         requestBody.headers = {};
       }
 
-      const response = await fetch('http://localhost:3001/mcp-servers', {
+      const response = await fetch(`${config.apiBaseUrl}/mcp-servers`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -123,7 +124,7 @@ export default function Home() {
     if (!confirm(`Are you sure you want to delete the "${serverName}" MCP server?`)) return;
 
     try {
-      const response = await fetch(`http://localhost:3001/mcp-servers/${serverName}`, {
+      const response = await fetch(`${config.apiBaseUrl}/mcp-servers/${serverName}`, {
         method: 'DELETE',
       });
 
@@ -138,7 +139,7 @@ export default function Home() {
 
   const handleSyncMcpTools = async () => {
     try {
-      const response = await fetch('http://localhost:3001/mcp-servers/sync', {
+      const response = await fetch(`${config.apiBaseUrl}/mcp-servers/sync`, {
         method: 'POST',
       });
 
@@ -159,7 +160,7 @@ export default function Home() {
     if (!editingTool) return;
 
     try {
-      const response = await fetch(`http://localhost:3001/tools/${editingTool.id}`, {
+      const response = await fetch(`${config.apiBaseUrl}/tools/${editingTool.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -179,7 +180,7 @@ export default function Home() {
 
   const handleToolToggle = async (tool: Tool) => {
     try {
-      const response = await fetch(`http://localhost:3001/tools/${tool.id}`, {
+      const response = await fetch(`${config.apiBaseUrl}/tools/${tool.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -219,7 +220,7 @@ export default function Home() {
     setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
 
     try {
-      const response = await fetch('http://localhost:3001/chat', {
+      const response = await fetch(`${config.apiBaseUrl}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
