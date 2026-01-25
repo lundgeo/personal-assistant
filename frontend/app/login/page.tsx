@@ -13,7 +13,7 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full space-y-8 p-8 bg-white rounded-xl shadow-lg">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900">AI Chatbot</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Personal Assistant</h1>
           <p className="mt-2 text-gray-600">Sign in to continue</p>
         </div>
 
@@ -50,10 +50,6 @@ function LoginContent() {
             </svg>
             <span className="font-medium">Continue with Google</span>
           </button>
-        </div>
-
-        <div className="mt-6 text-center text-sm text-gray-500">
-          <p>By signing in, you agree to our terms of service.</p>
         </div>
       </div>
     </div>
